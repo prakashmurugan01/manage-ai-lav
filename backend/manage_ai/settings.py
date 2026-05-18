@@ -24,7 +24,7 @@ def env_bool(name, default=False):
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 railway_public_domain = env("RAILWAY_PUBLIC_DOMAIN", "")
-allowed_hosts_default = "localhost,127.0.0.1"
+allowed_hosts_default = "localhost,127.0.0.1,.railway.app"
 if railway_public_domain:
     allowed_hosts_default = f"{allowed_hosts_default},{railway_public_domain}"
 ALLOWED_HOSTS = [host.strip() for host in env("DJANGO_ALLOWED_HOSTS", allowed_hosts_default).split(",") if host.strip()]
@@ -78,6 +78,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "apps.core.middleware.HealthcheckMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.api_keys.middleware.ApiKeyMiddleware",
