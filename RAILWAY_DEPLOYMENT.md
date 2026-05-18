@@ -26,7 +26,7 @@ DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=.railway.app,your-backend-domain.railway.app
 CORS_ALLOWED_ORIGINS=https://your-frontend-domain.railway.app
 CSRF_TRUSTED_ORIGINS=https://your-frontend-domain.railway.app
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL=postgresql://postgres:<your-password>@db.sqerzctpeharotzjtyfi.supabase.co:5432/postgres
 REDIS_URL=${{Redis.REDIS_URL}}
 REDIS_CACHE_URL=${{Redis.REDIS_URL}}
 CELERY_BROKER_URL=${{Redis.REDIS_URL}}
@@ -34,7 +34,7 @@ CELERY_RESULT_BACKEND=${{Redis.REDIS_URL}}
 USE_INMEMORY_CHANNELS=False
 ```
 
-Add Railway PostgreSQL and Redis plugins before deploying the backend.
+Use your Supabase PostgreSQL credentials in `DATABASE_URL` and add the Railway Redis plugin before deploying the backend.
 
 ## Frontend service
 
@@ -58,13 +58,4 @@ Required variables:
 VITE_API_BASE_URL=https://your-backend-domain.railway.app/api
 VITE_WS_URL=wss://your-backend-domain.railway.app/ws/events/
 VITE_WS_BASE_URL=wss://your-backend-domain.railway.app/ws
-VITE_FIREBASE_API_KEY=AIzaSyCiuXcEM9RuFBM1nEHBCpn19hShaeJ1Wyo
-VITE_FIREBASE_AUTH_DOMAIN=manage-d7841.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=manage-d7841
-VITE_FIREBASE_STORAGE_BUCKET=manage-d7841.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=185772558814
-VITE_FIREBASE_APP_ID=1:185772558814:web:419b5844779d6cf09af54f
-VITE_FIREBASE_MEASUREMENT_ID=G-N3YH8PVSYH
 ```
-
-The Firebase SDK is initialized in `frontend/src/lib/firebase.js`; Firestore is exported as `firestore` for new database-backed frontend features.
