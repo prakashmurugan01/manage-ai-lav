@@ -1,9 +1,8 @@
 from datetime import timedelta
 from pathlib import Path
 import os
-import re
-from urllib.parse import urlparse, unquote
 
+import dj_database_url
 from dotenv import load_dotenv
 
 
@@ -142,61 +141,24 @@ TEMPLATES = [
 WSGI_APPLICATION = "manage_ai.wsgi.application"
 ASGI_APPLICATION = "manage_ai.asgi.application"
 
-def database_from_url(database_url: str) -> dict[str, object]:
-    """
-    Parse DATABASE_URL into a Django DATABASES dict.
-    Handles Railway PostgreSQL, Supabase, and SQLite URLs.
-    Adds SSL for all remote PostgreSQL connections.
-    """
-    # Strip square brackets around hostname - Python 3.12's urlparse rejects
-    # bracketed hostnames that are not valid IPv4/IPv6 addresses (RFC 2732).
-    database_url = re.sub(r"@\[([^\]]+)\]", r"@\1", database_url)
-    parsed = urlparse(database_url)
-    engine_by_scheme = {
-        "postgres": "django.db.backends.postgresql",
-        "postgresql": "django.db.backends.postgresql",
-        "psql": "django.db.backends.postgresql",
-        "postgresql+psycopg": "django.db.backends.postgresql",
-        "postgresql+psycopg2": "django.db.backends.postgresql",
-        "sqlite": "django.db.backends.sqlite3",
-        "sqlite3": "django.db.backends.sqlite3",
-    }
-    scheme = parsed.scheme.split("+", 1)[0] if "+" in parsed.scheme else parsed.scheme
-    engine = engine_by_scheme.get(parsed.scheme) or engine_by_scheme.get(scheme)
-    if not engine:
-        raise ValueError(f"Unsupported DATABASE_URL scheme: {parsed.scheme}")
-    if engine == "django.db.backends.sqlite3":
-        db_path = unquote(parsed.path.lstrip("/"))
-        return {
-            "ENGINE": engine,
-            "NAME": db_path or str(BASE_DIR / "manageai.sqlite3"),
-        }
-    db_options = {}
-    host = parsed.hostname or ""
-    is_local = host in {"localhost", "127.0.0.1", "::1", ""}
-    if not is_local:
-        db_options["sslmode"] = "require"
-    return {
-        "ENGINE": engine,
-        "NAME": unquote(parsed.path.lstrip("/")) or "postgres",
-        "USER": unquote(parsed.username or ""),
-        "PASSWORD": unquote(parsed.password or ""),
-        "HOST": host,
-        "PORT": str(parsed.port or 5432),
-        "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 60),
-        **({"OPTIONS": db_options} if db_options else {}),
-    }
-
-
 DATABASE_URL = env("DATABASE_URL")
-DATABASES = {
-    "default": database_from_url(DATABASE_URL)
-    if DATABASE_URL
-    else {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / (env("DB_NAME", "manageai.sqlite3") or "manageai.sqlite3"),
+if DATABASE_URL:
+    database_config = dj_database_url.parse(DATABASE_URL, conn_max_age=env_int("DB_CONN_MAX_AGE", 60))
+    database_options = dict(database_config.get("OPTIONS") or {})
+    host = str(database_config.get("HOST", ""))
+    if host not in {"localhost", "127.0.0.1", "::1", ""}:
+        database_options["sslmode"] = "require"
+    database_config["OPTIONS"] = database_options
+    DATABASES = {
+        "default": database_config,
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / (env("DB_NAME", "manageai.sqlite3") or "manageai.sqlite3"),
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
