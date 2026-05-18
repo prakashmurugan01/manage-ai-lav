@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -55,6 +54,7 @@ from apps.tickets.views import (
     WorkflowExecutionViewSet,
     WorkflowTemplateViewSet,
 )
+from manage_ai.health import health_view
 
 router = DefaultRouter()
 router.register("users", UserViewSet, basename="users")
@@ -103,21 +103,6 @@ router.register("remote-devices", RemoteDeviceViewSet, basename="remote-devices"
 router.register("remote-sessions", RemoteSessionViewSet, basename="remote-sessions")
 router.register("remote-transfers", RemoteTransferViewSet, basename="remote-transfers")
 router.register("remote-logs", RemoteActivityLogViewSet, basename="remote-logs")
-
-
-def health_view(request):
-    host = request.get_host().split(":")[0]
-    port = request.get_port()
-    return JsonResponse(
-        {
-            "status": "ok",
-            "message": "ManageAI backend is running. Do not browse to 0.0.0.0; use 127.0.0.1 on this PC or the server LAN IP from another device.",
-            "local_url": f"http://127.0.0.1:{port}",
-            "lan_url_hint": f"http://{host}:{port}" if host not in {"0.0.0.0", "127.0.0.1", "localhost"} else "http://YOUR_LAN_IP:8001",
-            "agent_server_hint": f"ws://{host}:{port}" if host not in {"0.0.0.0", "127.0.0.1", "localhost"} else "ws://YOUR_LAN_IP:8001",
-            "api_login": "/api/auth/login/",
-        }
-    )
 
 
 urlpatterns = [

@@ -1,33 +1,68 @@
 from datetime import timedelta
 from pathlib import Path
 import os
+import re
 from urllib.parse import urlparse, unquote
 
 from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+
+# Load .env only for local development.
+if (BASE_DIR / ".env").exists():
+    load_dotenv(BASE_DIR / ".env")
 
 
-def env(name, default=None):
-    return os.getenv(name, default)
+def env(name: str, default: object = None) -> str | None:
+    value = os.getenv(name)
+    if value is not None:
+        return value
+    if default is None:
+        return None
+    return str(default)
 
 
-def env_bool(name, default=False):
+def env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
-DEBUG = env_bool("DJANGO_DEBUG", True)
-railway_public_domain = env("RAILWAY_PUBLIC_DOMAIN", "")
-allowed_hosts_default = "localhost,127.0.0.1"
-if railway_public_domain:
-    allowed_hosts_default = f"{allowed_hosts_default},{railway_public_domain}"
-ALLOWED_HOSTS = [host.strip() for host in env("DJANGO_ALLOWED_HOSTS", allowed_hosts_default).split(",") if host.strip()]
+def env_int(name: str, default: int) -> int:
+    value = env(name)
+    if value is None:
+        return default
+    return int(value)
+
+
+def csv_env(name: str, default: str = "") -> list[str]:
+    raw_value = env(name, default) or default
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me") or "dev-only-change-me"
+DEBUG = env_bool("DJANGO_DEBUG", False)
+
+_railway_domain = env("RAILWAY_PUBLIC_DOMAIN", "") or ""
+_railway_static_url = env("RAILWAY_STATIC_URL", "") or ""
+_extra_hosts = env("DJANGO_ALLOWED_HOSTS", "") or ""
+
+_base_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
+if _railway_domain:
+    _base_hosts.append(_railway_domain)
+if _railway_static_url:
+    _base_hosts.append(_railway_static_url)
+_base_hosts.append(".railway.app")
+_base_hosts.append(".up.railway.app")
+if _extra_hosts:
+    for host in _extra_hosts.split(","):
+        host = host.strip()
+        if host:
+            _base_hosts.append(host)
+
+ALLOWED_HOSTS = list(dict.fromkeys(_base_hosts))
 
 INSTALLED_APPS = [
     "daphne",
@@ -107,31 +142,49 @@ TEMPLATES = [
 WSGI_APPLICATION = "manage_ai.wsgi.application"
 ASGI_APPLICATION = "manage_ai.asgi.application"
 
-def database_from_url(database_url):
-    # Strip square brackets around hostname — Python 3.12's urlparse rejects
+def database_from_url(database_url: str) -> dict[str, object]:
+    """
+    Parse DATABASE_URL into a Django DATABASES dict.
+    Handles Railway PostgreSQL, Supabase, and SQLite URLs.
+    Adds SSL for all remote PostgreSQL connections.
+    """
+    # Strip square brackets around hostname - Python 3.12's urlparse rejects
     # bracketed hostnames that are not valid IPv4/IPv6 addresses (RFC 2732).
-    import re
-    database_url = re.sub(r'@\[([^\]]+)\]', r'@\1', database_url)
+    database_url = re.sub(r"@\[([^\]]+)\]", r"@\1", database_url)
     parsed = urlparse(database_url)
     engine_by_scheme = {
         "postgres": "django.db.backends.postgresql",
         "postgresql": "django.db.backends.postgresql",
         "psql": "django.db.backends.postgresql",
+        "postgresql+psycopg": "django.db.backends.postgresql",
+        "postgresql+psycopg2": "django.db.backends.postgresql",
         "sqlite": "django.db.backends.sqlite3",
+        "sqlite3": "django.db.backends.sqlite3",
     }
-    engine = engine_by_scheme.get(parsed.scheme)
+    scheme = parsed.scheme.split("+", 1)[0] if "+" in parsed.scheme else parsed.scheme
+    engine = engine_by_scheme.get(parsed.scheme) or engine_by_scheme.get(scheme)
     if not engine:
         raise ValueError(f"Unsupported DATABASE_URL scheme: {parsed.scheme}")
     if engine == "django.db.backends.sqlite3":
-        return {"ENGINE": engine, "NAME": unquote(parsed.path.lstrip("/")) or BASE_DIR / "manageai.sqlite3"}
+        db_path = unquote(parsed.path.lstrip("/"))
+        return {
+            "ENGINE": engine,
+            "NAME": db_path or str(BASE_DIR / "manageai.sqlite3"),
+        }
+    db_options = {}
+    host = parsed.hostname or ""
+    is_local = host in {"localhost", "127.0.0.1", "::1", ""}
+    if not is_local:
+        db_options["sslmode"] = "require"
     return {
         "ENGINE": engine,
-        "NAME": unquote(parsed.path.lstrip("/")),
+        "NAME": unquote(parsed.path.lstrip("/")) or "postgres",
         "USER": unquote(parsed.username or ""),
         "PASSWORD": unquote(parsed.password or ""),
-        "HOST": parsed.hostname or "",
-        "PORT": str(parsed.port or ""),
-        "CONN_MAX_AGE": int(env("DB_CONN_MAX_AGE", 600)),
+        "HOST": host,
+        "PORT": str(parsed.port or 5432),
+        "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 60),
+        **({"OPTIONS": db_options} if db_options else {}),
     }
 
 
@@ -141,7 +194,7 @@ DATABASES = {
     if DATABASE_URL
     else {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / env("DB_NAME", "manageai.sqlite3"),
+        "NAME": BASE_DIR / (env("DB_NAME", "manageai.sqlite3") or "manageai.sqlite3"),
     }
 }
 
@@ -162,8 +215,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-DATA_UPLOAD_MAX_MEMORY_SIZE = int(env("DATA_UPLOAD_MAX_MEMORY_SIZE", 5 * 1024 * 1024 * 1024))
-FILE_UPLOAD_MAX_MEMORY_SIZE = int(env("FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024))
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("DATA_UPLOAD_MAX_MEMORY_SIZE", 5 * 1024 * 1024 * 1024)
+FILE_UPLOAD_MAX_MEMORY_SIZE = env_int("FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024)
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 
@@ -186,47 +239,56 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(env("ACCESS_TOKEN_MINUTES", 30))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(env("REFRESH_TOKEN_DAYS", 7))),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("ACCESS_TOKEN_MINUTES", 30)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("REFRESH_TOKEN_DAYS", 7)),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175").split(",")
-    if origin.strip()
-]
+CORS_ALLOWED_ORIGINS = [o.strip() for o in (env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175") or "").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in env("CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origin.strip()
-]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in (env("CSRF_TRUSTED_ORIGINS", "") or "").split(",") if o.strip()]
+if _railway_domain:
+    railway_https = f"https://{_railway_domain}"
+    if railway_https not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(railway_https)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 X_FRAME_OPTIONS = "DENY"
 
-CHANNEL_LAYERS = {
+if not DEBUG:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+_redis_url = env("REDIS_URL", "") or ""
+_use_inmemory = env_bool("USE_INMEMORY_CHANNELS", not bool(_redis_url))
+_channel_layers = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}} if _use_inmemory else {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [env("REDIS_URL", "redis://127.0.0.1:6379/0")]},
+        "CONFIG": {"hosts": [_redis_url]},
     }
 }
 
-CACHES = {
+CHANNEL_LAYERS = _channel_layers
+
+_redis_cache_url = env("REDIS_CACHE_URL", env("REDIS_URL", "")) or ""
+_caches = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": env("REDIS_CACHE_URL", "redis://127.0.0.1:6379/1"),
+        "LOCATION": _redis_cache_url,
         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+    }
+} if _redis_cache_url else {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 
-if env_bool("USE_INMEMORY_CHANNELS", False):
-    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+CACHES = _caches
 
 AI_PROVIDER = env("AI_PROVIDER", "local")
 AI_ENABLED = env_bool("AI_ENABLED", False)
@@ -235,7 +297,7 @@ FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", "")
 GITHUB_TOKEN = env("GITHUB_TOKEN", "")
 VERCEL_API_TOKEN = env("VERCEL_API_TOKEN", env("VERCEL_TOKEN", ""))
 VERCEL_TEAM_ID = env("VERCEL_TEAM_ID", "")
-VERCEL_CACHE_SECONDS = int(env("VERCEL_CACHE_SECONDS", 45))
+VERCEL_CACHE_SECONDS = env_int("VERCEL_CACHE_SECONDS", 45)
 AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", env("AWS_ACCESS_KEY", ""))
 AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", env("AWS_SECRET_KEY", ""))
 AWS_REGION = env("AWS_REGION", "us-east-1")
