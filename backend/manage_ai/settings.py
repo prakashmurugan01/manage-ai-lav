@@ -108,6 +108,10 @@ WSGI_APPLICATION = "manage_ai.wsgi.application"
 ASGI_APPLICATION = "manage_ai.asgi.application"
 
 def database_from_url(database_url):
+    # Strip square brackets around hostname — Python 3.12's urlparse rejects
+    # bracketed hostnames that are not valid IPv4/IPv6 addresses (RFC 2732).
+    import re
+    database_url = re.sub(r'@\[([^\]]+)\]', r'@\1', database_url)
     parsed = urlparse(database_url)
     engine_by_scheme = {
         "postgres": "django.db.backends.postgresql",
