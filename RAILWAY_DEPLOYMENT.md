@@ -12,10 +12,22 @@ Build command:
 pip install -r requirements.txt
 ```
 
-Start command:
+Start command (recommended, from `backend/Procfile`):
 
 ```bash
-python manage.py migrate && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p $PORT manage_ai.asgi:application
+web: sh -c 'set -e; : "${PORT:=8000}"; python manage.py migrate --check --noinput || python manage.py migrate --noinput; python manage.py collectstatic --noinput; exec daphne -b 0.0.0.0 -p "$PORT" manage_ai.asgi:application'
+```
+
+Gunicorn fallback process type (if ASGI/WebSocket startup fails):
+
+```bash
+web-gunicorn: sh -c 'set -e; : "${PORT:=8000}"; python manage.py migrate --check --noinput || python manage.py migrate --noinput; python manage.py collectstatic --noinput; exec gunicorn manage_ai.wsgi:application --bind 0.0.0.0:"$PORT" --workers "${WEB_CONCURRENCY:-2}" --timeout "${GUNICORN_TIMEOUT:-120}" --access-logfile - --error-logfile -'
+```
+
+Healthcheck endpoint:
+
+```text
+/health/
 ```
 
 Required variables:
@@ -32,6 +44,14 @@ REDIS_CACHE_URL=${{Redis.REDIS_URL}}
 CELERY_BROKER_URL=${{Redis.REDIS_URL}}
 CELERY_RESULT_BACKEND=${{Redis.REDIS_URL}}
 USE_INMEMORY_CHANNELS=False
+```
+
+Optional variables:
+
+```env
+RAILWAY_PUBLIC_DOMAIN=your-backend-domain.railway.app
+WEB_CONCURRENCY=2
+GUNICORN_TIMEOUT=120
 ```
 
 Add Railway PostgreSQL and Redis plugins before deploying the backend.

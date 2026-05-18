@@ -1,3 +1,5 @@
+from django.http import JsonResponse
+from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -6,6 +8,16 @@ from rest_framework.views import APIView
 from apps.core.models import ModuleRegistry, UniversalQuery
 from apps.core.serializers import ModuleRegistrySerializer, UniversalQueryRequestSerializer, UniversalQuerySerializer
 from apps.core.services import UniversalQueryProcessor
+
+
+def health_check(_request):
+    return JsonResponse(
+        {
+            "status": "ok",
+            "service": "manage-ai-backend",
+            "timestamp": timezone.now().isoformat(),
+        }
+    )
 
 
 def api_response(data=None, meta=None, errors=None, http_status=status.HTTP_200_OK):
@@ -86,4 +98,3 @@ class ModuleRegistryViewSet(viewsets.ModelViewSet):
                 "active": module.is_active,
             }
         )
-

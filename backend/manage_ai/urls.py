@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -40,6 +39,7 @@ from apps.enterprise.views import (
 )
 from apps.notifications.views import NotificationViewSet
 from apps.projects.views import ProjectViewSet
+from apps.core.views import health_check
 from apps.remote_access.views import RemoteActivityLogViewSet, RemoteDeviceViewSet, RemoteSessionViewSet, RemoteTransferViewSet
 from apps.tasks.views import TaskCommentViewSet, TaskViewSet
 from apps.tickets.views import (
@@ -104,24 +104,9 @@ router.register("remote-sessions", RemoteSessionViewSet, basename="remote-sessio
 router.register("remote-transfers", RemoteTransferViewSet, basename="remote-transfers")
 router.register("remote-logs", RemoteActivityLogViewSet, basename="remote-logs")
 
-
-def health_view(request):
-    host = request.get_host().split(":")[0]
-    port = request.get_port()
-    return JsonResponse(
-        {
-            "status": "ok",
-            "message": "ManageAI backend is running. Do not browse to 0.0.0.0; use 127.0.0.1 on this PC or the server LAN IP from another device.",
-            "local_url": f"http://127.0.0.1:{port}",
-            "lan_url_hint": f"http://{host}:{port}" if host not in {"0.0.0.0", "127.0.0.1", "localhost"} else "http://YOUR_LAN_IP:8001",
-            "agent_server_hint": f"ws://{host}:{port}" if host not in {"0.0.0.0", "127.0.0.1", "localhost"} else "ws://YOUR_LAN_IP:8001",
-            "api_login": "/api/auth/login/",
-        }
-    )
-
-
 urlpatterns = [
-    path("", health_view, name="health"),
+    path("", health_check, name="health"),
+    path("health/", health_check, name="healthcheck"),
     path("admin/", admin.site.urls),
     path("api/auth/register/", RegisterView.as_view(), name="register"),
     path("api/auth/login/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
