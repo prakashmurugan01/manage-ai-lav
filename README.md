@@ -12,7 +12,7 @@ The dashboard is role-aware:
 ## Stack
 
 - Frontend: React.js, Vite, Tailwind CSS, Framer Motion, Axios
-- Backend: Django, Django REST Framework, SQLite, JWT authentication
+- Backend: Django, Django REST Framework, Supabase PostgreSQL, JWT authentication
 - Realtime-ready: Django Channels with Redis-ready channel layers
 - Integrations: GitHub API via `GITHUB_TOKEN` for branches, commits, developer activity, and branch deployment metadata
 
@@ -56,6 +56,26 @@ Demo users after seeding:
 - `client@manageai.local` / `ManageAI@12345`
 
 For a fuller Windows local runbook, see [Deployment guide](docs/DEPLOYMENT.md).
+
+## Supabase PostgreSQL setup
+
+1. Install dependencies:
+
+```bash
+pip install python-dotenv psycopg2
+```
+
+2. Add/update your backend environment file with Supabase PostgreSQL details:
+
+```env
+DATABASE_URL=postgresql://postgres:<your-password>@db.sqerzctpeharotzjtyfi.supabase.co:5432/postgres
+```
+
+3. Install Agent Skills (optional):
+
+```bash
+npx skills add supabase/agent-skills
+```
 
 ## Documentation
 
