@@ -24,9 +24,18 @@ def env_bool(name, default=False):
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 railway_public_domain = env("RAILWAY_PUBLIC_DOMAIN", "")
-allowed_hosts_default = "localhost,127.0.0.1"
+railway_private_domain = env("RAILWAY_PRIVATE_DOMAIN", "")
+allowed_hosts_default_parts = [
+    "localhost",
+    "127.0.0.1",
+    ".railway.app",
+    ".up.railway.app",
+]
 if railway_public_domain:
-    allowed_hosts_default = f"{allowed_hosts_default},{railway_public_domain}"
+    allowed_hosts_default_parts.append(railway_public_domain)
+if railway_private_domain:
+    allowed_hosts_default_parts.append(railway_private_domain)
+allowed_hosts_default = ",".join(allowed_hosts_default_parts)
 ALLOWED_HOSTS = [host.strip() for host in env("DJANGO_ALLOWED_HOSTS", allowed_hosts_default).split(",") if host.strip()]
 
 INSTALLED_APPS = [
