@@ -1,1 +1,1 @@
-web: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p ${PORT:-8000} manage_ai.asgi:application"
+web: sh scripts/start.sh

@@ -1,8 +1,8 @@
 from datetime import timedelta
-from importlib import import_module
 from pathlib import Path
 import os
-from typing import Any, Protocol, cast
+from typing import Any
+from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
 
@@ -42,12 +42,42 @@ def csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
-class _DjDatabaseUrlModule(Protocol):
-    def parse(self, url: str, conn_max_age: int = 0, **kwargs: Any) -> dict[str, Any]:
-        ...
+def database_from_url(database_url: str, conn_max_age: int = 60) -> dict[str, Any]:
+    parsed = urlparse(database_url)
+    scheme = parsed.scheme.lower()
+    engine_by_scheme = {
+        "postgres": "django.db.backends.postgresql",
+        "postgresql": "django.db.backends.postgresql",
+        "psql": "django.db.backends.postgresql",
+        "sqlite": "django.db.backends.sqlite3",
+        "sqlite3": "django.db.backends.sqlite3",
+    }
+    engine = engine_by_scheme.get(scheme)
+    if not engine:
+        raise ValueError(f"Unsupported DATABASE_URL scheme: {parsed.scheme}")
+    if engine == "django.db.backends.sqlite3":
+        sqlite_path = unquote(parsed.path or "").lstrip("/")
+        return {"ENGINE": engine, "NAME": sqlite_path or BASE_DIR / "manageai.sqlite3"}
+    config: dict[str, Any] = {
+        "ENGINE": engine,
+        "NAME": unquote((parsed.path or "").lstrip("/")),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or ""),
+        "CONN_MAX_AGE": conn_max_age,
+    }
+    if config["HOST"] not in {"localhost", "127.0.0.1", "::1", ""}:
+        config["OPTIONS"] = {"sslmode": env("DB_SSLMODE", "require")}
+    return config
 
 
-dj_database_url = cast(_DjDatabaseUrlModule, import_module("dj_database_url"))
+def host_from_value(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    return parsed.netloc or parsed.path.split("/")[0]
 
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me") or "dev-only-change-me"
@@ -59,16 +89,16 @@ _extra_hosts = env("DJANGO_ALLOWED_HOSTS", "") or ""
 
 _base_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
 if _railway_domain:
-    _base_hosts.append(_railway_domain)
+    _base_hosts.append(host_from_value(_railway_domain))
 if _railway_static_url:
-    _base_hosts.append(_railway_static_url)
+    _base_hosts.append(host_from_value(_railway_static_url))
 _base_hosts.append(".railway.app")
 _base_hosts.append(".up.railway.app")
 if _extra_hosts:
     for host in _extra_hosts.split(","):
         host = host.strip()
         if host:
-            _base_hosts.append(host)
+            _base_hosts.append(host_from_value(host))
 
 ALLOWED_HOSTS: list[str] = list(dict.fromkeys(_base_hosts))
 
@@ -152,13 +182,7 @@ ASGI_APPLICATION = "manage_ai.asgi.application"
 
 DATABASE_URL = env("DATABASE_URL")
 if DATABASE_URL:
-    database_config: dict[str, Any] = dj_database_url.parse(DATABASE_URL, conn_max_age=env_int("DB_CONN_MAX_AGE", 60))
-    database_options: dict[str, Any] = dict(database_config.get("OPTIONS") or {})
-    host = str(database_config.get("HOST", ""))
-    if host not in {"localhost", "127.0.0.1", "::1", ""}:
-        database_options["sslmode"] = "require"
-    database_config["OPTIONS"] = database_options
-    _default_database: dict[str, Any] = database_config
+    _default_database: dict[str, Any] = database_from_url(DATABASE_URL, conn_max_age=env_int("DB_CONN_MAX_AGE", 60))
 else:
     _default_database = {
         "ENGINE": "django.db.backends.sqlite3",
@@ -184,8 +208,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = env("MEDIA_URL", "/media/") or "/media/"
+_volume_mount_path = env("RAILWAY_VOLUME_MOUNT_PATH", "") or ""
+_default_media_root = Path(_volume_mount_path) / "media" if _volume_mount_path else BASE_DIR / "media"
+MEDIA_ROOT = Path(env("MEDIA_ROOT", _default_media_root) or _default_media_root)
+SERVE_MEDIA_FILES = env_bool("SERVE_MEDIA_FILES", bool(env("RAILWAY_ENVIRONMENT") or env("RAILWAY_PROJECT_ID") or DEBUG))
 DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("DATA_UPLOAD_MAX_MEMORY_SIZE", 5 * 1024 * 1024 * 1024)
 FILE_UPLOAD_MAX_MEMORY_SIZE = env_int("FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024)
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -217,13 +244,18 @@ SIMPLE_JWT: dict[str, Any] = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+_frontend_url = env("FRONTEND_URL", "") or ""
 CORS_ALLOWED_ORIGINS = [o.strip() for o in (env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175") or "").split(",") if o.strip()]
+if _frontend_url and _frontend_url not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(_frontend_url.rstrip("/"))
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in (env("CSRF_TRUSTED_ORIGINS", "") or "").split(",") if o.strip()]
 if _railway_domain:
     railway_https = f"https://{_railway_domain}"
     if railway_https not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(railway_https)
+if _frontend_url and _frontend_url.rstrip("/") not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(_frontend_url.rstrip("/"))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_HTTPONLY = True

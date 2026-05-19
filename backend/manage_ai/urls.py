@@ -54,7 +54,7 @@ from apps.tickets.views import (
     WorkflowExecutionViewSet,
     WorkflowTemplateViewSet,
 )
-from manage_ai.health import health_view
+from manage_ai.health import health_view, readiness_view
 
 router = DefaultRouter()
 router.register("users", UserViewSet, basename="users")
@@ -107,6 +107,8 @@ router.register("remote-logs", RemoteActivityLogViewSet, basename="remote-logs")
 
 urlpatterns = [
     path("", health_view, name="health"),
+    path("healthz/", health_view, name="healthz"),
+    path("readyz/", readiness_view, name="readyz"),
     path("admin/", admin.site.urls),
     path("api/auth/register/", RegisterView.as_view(), name="register"),
     path("api/auth/login/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
@@ -140,5 +142,5 @@ urlpatterns = [
     path("api/v1/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
 
-if settings.DEBUG:
+if settings.DEBUG or getattr(settings, "SERVE_MEDIA_FILES", False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
