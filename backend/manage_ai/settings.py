@@ -1,8 +1,9 @@
 from datetime import timedelta
+from importlib import import_module
 from pathlib import Path
 import os
+from typing import Any, Protocol, cast
 
-import dj_database_url
 from dotenv import load_dotenv
 
 
@@ -41,6 +42,14 @@ def csv_env(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
+class _DjDatabaseUrlModule(Protocol):
+    def parse(self, url: str, conn_max_age: int = 0, **kwargs: Any) -> dict[str, Any]:
+        ...
+
+
+dj_database_url = cast(_DjDatabaseUrlModule, import_module("dj_database_url"))
+
+
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me") or "dev-only-change-me"
 DEBUG = env_bool("DJANGO_DEBUG", False)
 
@@ -61,9 +70,9 @@ if _extra_hosts:
         if host:
             _base_hosts.append(host)
 
-ALLOWED_HOSTS = list(dict.fromkeys(_base_hosts))
+ALLOWED_HOSTS: list[str] = list(dict.fromkeys(_base_hosts))
 
-INSTALLED_APPS = [
+INSTALLED_APPS: list[str] = [
     "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -106,7 +115,7 @@ INSTALLED_APPS = [
     "apps.remote_access",
 ]
 
-MIDDLEWARE = [
+MIDDLEWARE: list[str] = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -122,7 +131,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "manage_ai.urls"
 
-TEMPLATES = [
+TEMPLATES: list[dict[str, Any]] = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],
@@ -143,24 +152,24 @@ ASGI_APPLICATION = "manage_ai.asgi.application"
 
 DATABASE_URL = env("DATABASE_URL")
 if DATABASE_URL:
-    database_config = dj_database_url.parse(DATABASE_URL, conn_max_age=env_int("DB_CONN_MAX_AGE", 60))
-    database_options = dict(database_config.get("OPTIONS") or {})
+    database_config: dict[str, Any] = dj_database_url.parse(DATABASE_URL, conn_max_age=env_int("DB_CONN_MAX_AGE", 60))
+    database_options: dict[str, Any] = dict(database_config.get("OPTIONS") or {})
     host = str(database_config.get("HOST", ""))
     if host not in {"localhost", "127.0.0.1", "::1", ""}:
         database_options["sslmode"] = "require"
     database_config["OPTIONS"] = database_options
-    DATABASES = {
-        "default": database_config,
-    }
+    _default_database: dict[str, Any] = database_config
 else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / (env("DB_NAME", "manageai.sqlite3") or "manageai.sqlite3"),
-        }
+    _default_database = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / (env("DB_NAME", "manageai.sqlite3") or "manageai.sqlite3"),
     }
 
-AUTH_PASSWORD_VALIDATORS = [
+DATABASES: dict[str, dict[str, Any]] = {
+    "default": _default_database,
+}
+
+AUTH_PASSWORD_VALIDATORS: list[dict[str, Any]] = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
@@ -182,7 +191,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = env_int("FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 *
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 
-REST_FRAMEWORK = {
+REST_FRAMEWORK: dict[str, Any] = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -200,7 +209,7 @@ REST_FRAMEWORK = {
     "URL_FORMAT_OVERRIDE": None,
 }
 
-SIMPLE_JWT = {
+SIMPLE_JWT: dict[str, Any] = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env_int("ACCESS_TOKEN_MINUTES", 30)),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=env_int("REFRESH_TOKEN_DAYS", 7)),
     "ROTATE_REFRESH_TOKENS": True,
@@ -228,17 +237,17 @@ if not DEBUG:
 
 _redis_url = env("REDIS_URL", "") or ""
 _use_inmemory = env_bool("USE_INMEMORY_CHANNELS", not bool(_redis_url))
-_channel_layers = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}} if _use_inmemory else {
+_channel_layers: dict[str, dict[str, Any]] = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}} if _use_inmemory else {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {"hosts": [_redis_url]},
     }
 }
 
-CHANNEL_LAYERS = _channel_layers
+CHANNEL_LAYERS: dict[str, dict[str, Any]] = _channel_layers
 
 _redis_cache_url = env("REDIS_CACHE_URL", env("REDIS_URL", "")) or ""
-_caches = {
+_caches: dict[str, dict[str, Any]] = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": _redis_cache_url,
@@ -250,7 +259,7 @@ _caches = {
     }
 }
 
-CACHES = _caches
+CACHES: dict[str, dict[str, Any]] = _caches
 
 AI_PROVIDER = env("AI_PROVIDER", "local")
 AI_ENABLED = env_bool("AI_ENABLED", False)
@@ -269,7 +278,7 @@ DIGITALOCEAN_API_TOKEN = env("DIGITALOCEAN_API_TOKEN", "")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "ManageAI <noreply@manageai.local>")
 EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 
-SPECTACULAR_SETTINGS = {
+SPECTACULAR_SETTINGS: dict[str, Any] = {
     "TITLE": "Universal Connection Engine API",
     "DESCRIPTION": "Unified CRM, ERP, HR, Inventory, Project Management, event, and optional AI APIs.",
     "VERSION": "1.0.0",
@@ -281,17 +290,17 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", DEBUG)
 API_KEY_FERNET_KEY = env("API_KEY_FERNET_KEY", FIELD_ENCRYPTION_KEY)
 
-from celery.schedules import crontab
+from celery.schedules import crontab  # type: ignore[import-untyped]
 
-CELERY_BEAT_SCHEDULE = {
-    "check-expiry-daily": {"task": "apps.notifications.tasks.check_hosting_expiry", "schedule": crontab(hour=9, minute=0)},
+CELERY_BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
+    "check-expiry-daily": {"task": "apps.notifications.tasks.check_hosting_expiry", "schedule": crontab(hour="9", minute="0")},
     "hosting-health-checks": {"task": "hosting.tasks.check_all_hosted_project_health", "schedule": 60.0},
     "hosting-vercel-sync": {"task": "hosting.tasks.sync_vercel_projects", "schedule": 60.0},
     "hosting-provider-sync": {"task": "hosting.tasks.sync_all_hosting_providers", "schedule": 120.0},
     "hosting-provider-failover": {"task": "hosting.tasks.evaluate_hosting_failover", "schedule": 60.0},
     "hosting-vercel-link-checks": {"task": "hosting.tasks.check_vercel_links", "schedule": 60.0},
     "hosting-vercel-deployment-alerts": {"task": "hosting.tasks.notify_failed_vercel_deployments", "schedule": 300.0},
-    "hosting-lifecycle-statuses": {"task": "hosting.tasks.update_hosting_lifecycle_statuses", "schedule": crontab(hour=9, minute=10)},
+    "hosting-lifecycle-statuses": {"task": "hosting.tasks.update_hosting_lifecycle_statuses", "schedule": crontab(hour="9", minute="10")},
     "collect-metrics": {"task": "apps.server_monitor.tasks.collect_server_metrics", "schedule": 60.0},
     "check-disk-alerts": {"task": "apps.server_monitor.tasks.check_disk_alerts", "schedule": 300.0},
     "broadcast-api-stats": {"task": "apps.api_monitor.tasks.broadcast_api_stats", "schedule": 10.0},
